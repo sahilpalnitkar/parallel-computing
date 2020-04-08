@@ -29,7 +29,7 @@ pthread_t p_threads[MAX_THREADS];// Threads
 pthread_attr_t attr;		// Thread attributes 
 
 pthread_mutex_t lock_minimum;	// Protects minimum, count
-int minimum = 9999999;			// Minimum value in the list
+int minimum;			// Minimum value in the list
 int count;			// Count of threads that have updated minimum
 
 int list[MAX_LIST_SIZE];	// List of values
@@ -55,14 +55,19 @@ void *find_minimum (void *s) {
     // Thread updates minimum 
     // *
     // *
-    // Put your code here ...
 	pthread_mutex_lock(&lock_minimum);
+	
+	if(count == 0){
+        minimum = list[my_start];
+	}
 	if (my_minimum < minimum){
+	    count++;
 		minimum = my_minimum;
 	}
 	pthread_mutex_unlock(&lock_minimum);
     // *
     // *
+    
 	
     // Thread exits
     pthread_exit(NULL);

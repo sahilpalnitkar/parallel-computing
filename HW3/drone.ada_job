@@ -1,0 +1,107 @@
+#BSUB -J drone      # job name
+#BSUB -L /bin/bash        # job's execution environment
+#BSUB -W 0:50            # wall clock runtime limit 
+#BSUB -n 20               # number of cores
+#BSUB -R "span[ptile=20]" 	# number of cores per node
+#BSUB -R "rusage[mem=2560]"  	# memory per process (CPU) for the job
+#BSUB -o output.%J        # file name for the job's standard output
+##
+# <--- at this point the current working directory is the one you submitted the job from.
+#
+module load intel/2017A         # load Intel software stack 
+
+./drone 10 44 0 10000
+./drone 10 44 1000 10000
+./drone 10 44 1000000 10000
+./drone 10 44 100000000 10000
+
+./drone 10 44 0 1000000
+./drone 10 44 1000 1000000
+./drone 10 44 1000000 1000000
+./drone 10 44 100000000 1000000
+
+./drone 10 2 0 10000
+./drone 10 2 1000 10000
+./drone 10 2 1000000 10000
+./drone 10 2 100000000 10000
+
+./drone 10 2 0 1000000
+./drone 10 2 1000 1000000
+./drone 10 2 1000000 1000000
+./drone 10 2 100000000 1000000
+
+./drone 10 10 0 10000
+./drone 10 10 1000 10000
+./drone 10 10 1000000 10000
+./drone 10 10 100000000 10000
+
+./drone 10 10 0 1000000
+./drone 10 10 1000 1000000
+./drone 10 10 1000000 1000000
+./drone 10 10 100000000 1000000
+
+#grid size 1000 tests
+echo
+
+./drone 1000 44 0 10000
+./drone 1000 44 1000 10000
+./drone 1000 44 1000000 10000
+./drone 1000 44 100000000 10000
+
+./drone 1000 44 0 1000000
+./drone 1000 44 1000 1000000
+./drone 1000 44 1000000 1000000
+./drone 1000 44 100000000 1000000
+
+./drone 1000 2 0 10000
+./drone 1000 2 1000 10000
+./drone 1000 2 1000000 10000
+./drone 1000 2 100000000 10000
+
+./drone 1000 2 0 1000000
+./drone 1000 2 1000 1000000
+./drone 1000 2 1000000 1000000
+./drone 1000 2 100000000 1000000
+
+./drone 1000 10 0 10000
+./drone 1000 10 1000 10000
+./drone 1000 10 1000000 10000
+./drone 1000 10 100000000 10000
+
+./drone 1000 10 0 1000000
+./drone 1000 10 1000 1000000
+./drone 1000 10 1000000 1000000
+./drone 1000 10 100000000 1000000
+
+# grid size 4096 tests
+echo
+./drone 4096 44 0 10000
+./drone 4096 44 1000 10000
+./drone 4096 44 1000000 10000
+./drone 4096 44 100000000 10000
+
+./drone 4096 44 0 1000000
+./drone 4096 44 1000 1000000
+./drone 4096 44 1000000 1000000
+./drone 4096 44 100000000 1000000
+
+./drone 4096 2 0 10000
+./drone 4096 2 1000 10000
+./drone 4096 2 1000000 10000
+./drone 4096 2 100000000 10000
+
+./drone 4096 2 0 1000000
+./drone 4096 2 1000 1000000
+./drone 4096 2 1000000 1000000
+./drone 4096 2 100000000 1000000
+
+./drone 4096 10 0 10000
+./drone 4096 10 1000 10000
+./drone 4096 10 1000000 10000
+./drone 4096 10 100000000 10000
+
+./drone 4096 10 0 1000000
+./drone 4096 10 1000 1000000
+./drone 4096 10 1000000 1000000
+./drone 4096 10 100000000 1000000
+##

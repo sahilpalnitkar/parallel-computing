@@ -27,13 +27,20 @@ int num_threads;		// Number of threads to create - user input
 int thread_id[MAX_THREADS];	// User defined id for thread
 pthread_t p_threads[MAX_THREADS];// Threads
 pthread_attr_t attr;		// Thread attributes 
-pthread_mutex_t lock_minimum;
-pthread_mutex_t lock_mean;	// Protects mean, count
-pthread_mutex_t lock_stdev;	// Protects stdev, count
-int minimum;
-int mean;			// Minimum value in the list
-int stdev;
-int count;			// Count of threads that have updated minimum
+pthread_mutex_t lock_mean_count, lock_stddev_count;
+pthread_mutex_t lock_barrier;
+pthread_cond_t co1,co2;
+
+long double true_mean;
+long double global_mean_sum = 0;
+long double global_stddev_sum = 0;
+long double mean;			// Minimum value in the list
+long double true_stddev;
+long double stddev;
+int mean_count = 0;			// Count of threads that have updated minimum
+int stddev_count = 0;
+int mean_done = 0;
+int stddev_done = 0;
 
 int list[MAX_LIST_SIZE];	// List of values
 int list_size;			// List size
@@ -41,56 +48,96 @@ int list_size;			// List size
 // Thread routine to compute minimum of sublist assigned to thread; 
 // update global value of minimum if necessary
 
-int calculateSD(int data[]) {
-    int sum = 0, means, SD = 0;
-    int i;
-    for (i = 0; i < list_size; ++i) {
-        sum += data[i];
+void barrier_simple_mean() {
+	pthread_mutex_lock(&lock_barrier);
+	mean_count++;
+	if (mean_count < num_threads){
+		pthread_cond_wait(&co1, &lock_barrier);
+	}
+	else{
+		for (int i = 0; i < num_threads; i++) 
+			pthread_cond_signal(&co1);
+	}
+	pthread_mutex_unlock(&lock_barrier);
+
+}
+void barrier_simple_stddev() {
+	pthread_mutex_lock(&lock_barrier);
+	stddev_count++;
+	if (stddev_count < num_threads){
+		pthread_cond_wait(&co1, &lock_barrier);
+	}
+	else{
+		for (int i = 0; i < num_threads; i++) 
+			pthread_cond_signal(&co1);
+	}
+	pthread_mutex_unlock(&lock_barrier);
+
+}
+
+long double calculate_stddev(long double mean, int list[]){
+    long double variance_sum = 0;
+    for (int i =0; i < list_size; i++){
+        long double var = ((double)list[i]-mean)*((double)list[i]-mean);
+        variance_sum += var;
+        
     }
-    means = sum / list_size;
-    for (i = 0; i < list_size; ++i)
-        SD += pow(data[i] - means, 2);
-    return sqrt(SD / list_size);
+    variance_sum = variance_sum/(double)list_size;
+    
+    long double calc_stddev = sqrt(variance_sum);
+    return calc_stddev;
 }
 
 void *find_statistics (void *s) {
     int j;
     int my_thread_id = *((int *)s);
-	int sum = 0;
+    long double my_local_sum = 0;
+    long double my_stddev_sum = 0;
 
     int block_size = list_size/num_threads;
     int my_start = my_thread_id*block_size;
     int my_end = (my_thread_id+1)*block_size-1;
     if (my_thread_id == num_threads-1) my_end = list_size-1;
+    long double my_mean = 0;
 
-    // Thread computes mean of list
-	for (int i = 0; i < list_size; i++){
-		sum += list[i];
+    // Thread computes sum of list
+	for (int i = my_start; i <= my_end; i++){
+		my_local_sum += (long double)list[i];
 	}
-	int my_mean = sum / list_size;
 	
-    // Thread updates minimum 
+	// *
     // *
-    // *
-    // Put your code here ...
-	pthread_mutex_lock(&lock_mean);
-	if (my_mean != mean){
-		mean = my_mean;
-		printf("my mean is %d\n", my_mean);
-		printf("mean is %d\n", mean);
-	}
-	pthread_mutex_unlock(&lock_mean);
-    // *
-    // *
-	int mysd = calculateSD(list);
-	pthread_mutex_lock(&lock_stdev);
-	if (mysd != stdev){
-		stdev = mysd;
-	}
-	printf("my_stdev is %d\n", mysd);
-	printf("stdev is %d\n", stdev);
-	pthread_mutex_unlock(&lock_stdev);
-
+    pthread_mutex_lock(&lock_mean_count);
+    global_mean_sum += my_local_sum;
+    pthread_mutex_unlock(&lock_mean_count);
+    barrier_simple_mean();
+    
+    pthread_mutex_lock(&lock_mean_count);
+    if (mean_done == 0){
+        mean = (long double)global_mean_sum/(long double)list_size;
+        mean_done++;
+    }
+    
+    pthread_mutex_unlock(&lock_mean_count);
+    
+    
+    
+    for (int i = my_start; i <= my_end; i++){
+        long double element = ((double)list[i]-mean)*((double)list[i]-mean)/(double)list_size;
+        my_stddev_sum += element;
+    }
+	
+	pthread_mutex_lock(&lock_stddev_count);
+    global_stddev_sum += my_stddev_sum;
+	pthread_mutex_unlock(&lock_stddev_count);
+	barrier_simple_stddev();
+	
+    pthread_mutex_lock(&lock_stddev_count);
+    if (stddev_done == 0){
+        stddev = sqrt(global_stddev_sum);
+        stddev_done++;
+    }
+    pthread_mutex_unlock(&lock_stddev_count);
     // Thread exits
     pthread_exit(NULL);
 }
@@ -105,8 +152,7 @@ int main(int argc, char *argv[]) {
     struct timespec start, stop;
     double total_time, time_res;
     int i, j; 
-    int true_minimum;
-
+    
     if (argc != 3) {
 	printf("Need two integers as input \n"); 
 	printf("Use: <executable_name> <list_size> <num_threads>\n"); 
@@ -126,24 +172,30 @@ int main(int argc, char *argv[]) {
     }; 
 
     // Initialize mutex and attribute structures
-    pthread_mutex_init(&lock_minimum, NULL); 
+    pthread_mutex_init(&lock_mean_count, NULL);
+    pthread_mutex_init(&lock_stddev_count, NULL); 
+    pthread_cond_init(&co1, NULL); 
+    pthread_cond_init(&co2, NULL); 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
     // Initialize list, compute minimum to verify result
     srand48(0); 	// seed the random number generator
     list[0] = lrand48(); 
-    true_minimum = list[0];
+    long double true_mean = 0;
+    long double avg_sum = (long double)list[0];
     for (j = 1; j < list_size; j++) {
 	list[j] = lrand48(); 
-	if (true_minimum > list[j]) {
-	    true_minimum = list[j];
+	avg_sum += (long double)list[j];
 	}
-    }
-
-    // Initialize count
-    count = 0;
-
+    true_mean = avg_sum/(long double)list_size;
+    mean = true_mean;
+    
+    
+    
+    true_stddev = calculate_stddev(true_mean, list);
+    stddev = true_stddev;
+   
     // Create threads; each thread executes find_statistics
     clock_gettime(CLOCK_REALTIME, &start);
     for (i = 0; i < num_threads; i++) {
@@ -161,15 +213,30 @@ int main(int argc, char *argv[]) {
 	+0.000000001*(stop.tv_nsec-start.tv_nsec);
 
     // Check answer
-    if (true_minimum != minimum) {
-	printf("Houston, we have a problem!\n"); 
-    }
-    // Print time taken
-    printf("Threads = %d, minimum = %d, time (sec) = %8.4f\n", 
-	    num_threads, minimum, total_time);
-	printf("mean is %d, stdev is %d",mean, stdev);
+    
+    
+    // if (true_mean != mean){
+    //     printf("Houston, we have a problem with the mean!\n");
+    //     printf("true_mean %Lf\n", true_mean);
+    //     printf("mean %Lf\n", mean);
+    // } 
+    // if (true_stddev != stddev) {
+	   // printf("Houston, we have a problem with the stddev!\n"); 
+	   // printf("true_stddev %Lf\n", true_stddev);
+    //     printf("stddev %Lf\n", stddev);
+    // }
+
+    printf("true_mean %Lf\n", true_mean);
+    printf("true_stddev %Lf\n", true_stddev);
+    // // Print time taken
+    printf("Threads = %d, mean = %Lf, stddev = %Lf, time (sec) = %8.4f\n", 
+	    num_threads, mean, stddev, total_time);
     // Destroy mutex and attribute structures
     pthread_attr_destroy(&attr);
-    pthread_mutex_destroy(&lock_minimum);
+    pthread_mutex_destroy(&lock_mean_count);
+    pthread_mutex_destroy(&lock_stddev_count);
+    pthread_mutex_destroy(&lock_barrier);
+    pthread_cond_destroy(&co1);
+    pthread_cond_destroy(&co2);
 }
 
