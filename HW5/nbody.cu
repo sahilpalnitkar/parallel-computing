@@ -5,8 +5,13 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <time.h>
+#include <limits>
+#include <float.h>
 
 #define MAX_POINTS 1048576
+#define block_size 1024
+
 
 // ---------------------------------------------------------------------------- 
 // Kernel Function to compute distance between all pairs of points
@@ -17,14 +22,78 @@
 // Output: 
 //	D: D[0] = minimum distance
 //
-__global__ void minimum_distance(float * X, float * Y, volatile float * D, int n) {
+__device__ unsigned int finished_blocks = 0; 
 
-    // ------------------------------------------------------------
-    //
-    // Kernel function code goes here
-    //
-    // ------------------------------------------------------------
-} 
+__global__ void minimum_distance(float * X, float * Y, volatile float * D, int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int i, z;
+    float dx, dy, temp_distance;    
+    float minDist = FLT_MAX; 
+    
+    bool finalBlockCheck;
+    
+    __shared__ float local_minimums[block_size];
+
+    if(idx < n - 1) {
+        for(z = idx + 1; z<n; z++) {   
+            dx = X[z] - X[idx];
+            dy = Y[z] - Y[idx];
+
+            temp_distance = sqrtf(dx * dx + dy * dy);   
+
+            if(temp_distance < minDist) {
+                minDist = temp_distance;
+            }
+        }
+
+        local_minimums[threadIdx.x] = minDist;
+    
+        __syncthreads();
+
+        // Compute the block local minimum
+        int largest_index = (n % block_size);
+
+        if(largest_index == 0) {
+            largest_index = block_size;   
+        }
+        else {
+            if(blockIdx.x != n/block_size) {
+                largest_index = block_size;    
+            }
+        }
+
+        for(i = 1; i<largest_index; i *= 2) {
+            if(threadIdx.x % (2 * i) == 0 && (threadIdx.x + i) < largest_index - 1) {
+                if(local_minimums[threadIdx.x] > local_minimums[threadIdx.x + i]) {
+                    local_minimums[threadIdx.x] = local_minimums[threadIdx.x + i];  
+                }
+
+                __syncthreads();
+            } 
+        }
+
+        if(threadIdx.x == 0) {
+            D[blockIdx.x] = local_minimums[0];
+
+            int value = atomicInc(&finished_blocks, gridDim.x);
+            finalBlockCheck = (value == (gridDim.x - 1));
+        }
+
+        // Last thread in the list computes the global minimum and puts it in D[0]
+        if(finalBlockCheck && threadIdx.x == 0) {
+            int num_blocks = n / block_size + (n % block_size != 0);
+
+            for(i = 1; i<num_blocks; i++) {
+                if(D[0] > D[i]) {
+                    D[0] = D[i];                   
+                }
+            }
+        }            
+    }    
+}
+
+
 // ---------------------------------------------------------------------------- 
 // Host function to compute minimum distance between points
 // Input:
@@ -174,11 +243,9 @@ int main(int argc, char* argv[]) {
     // Invoke kernel
     cudaEventRecord( start, 0 ); 
 
-    // ------------------------------------------------------------
-    //
-    // Invoke kernel function(s) here
-    //
-    // ------------------------------------------------------------
+    int num_blocks = num_points / (block_size) + ((num_points % (block_size)) != 0);
+
+    minimum_distance<<<num_blocks, block_size>>>(dVx, dVy, dmin_dist, num_points);
 
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
