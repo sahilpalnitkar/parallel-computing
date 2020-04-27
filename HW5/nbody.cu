@@ -24,7 +24,7 @@
 //
 __device__ unsigned int finished_blocks = 0; 
 
-__global__ void minimum_distance(float * X, float * Y, volatile float * D, int n) {
+__global__ void minimum_distance_kernel(float * X, float * Y, volatile float * D, int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     int i, z;
@@ -46,29 +46,26 @@ __global__ void minimum_distance(float * X, float * Y, volatile float * D, int n
                 minDist = temp_distance;
             }
         }
-
         local_minimums[threadIdx.x] = minDist;
-    
         __syncthreads();
-
+		
         // Compute the block local minimum
-        int largest_index = (n % block_size);
-
-        if(largest_index == 0) {
-            largest_index = block_size;   
+        int max_index = (n % block_size);
+		
+        if(max_index == 0) {
+            max_index = block_size;   
         }
         else {
             if(blockIdx.x != n/block_size) {
-                largest_index = block_size;    
+                max_index = block_size;    
             }
         }
 
-        for(i = 1; i<largest_index; i *= 2) {
-            if(threadIdx.x % (2 * i) == 0 && (threadIdx.x + i) < largest_index - 1) {
+        for(i = 1; i<max_index; i *= 2) {
+            if(threadIdx.x % (2 * i) == 0 && (threadIdx.x + i) < max_index - 1) {
                 if(local_minimums[threadIdx.x] > local_minimums[threadIdx.x + i]) {
                     local_minimums[threadIdx.x] = local_minimums[threadIdx.x + i];  
                 }
-
                 __syncthreads();
             } 
         }
@@ -82,9 +79,9 @@ __global__ void minimum_distance(float * X, float * Y, volatile float * D, int n
 
         // Last thread in the list computes the global minimum and puts it in D[0]
         if(finalBlockCheck && threadIdx.x == 0) {
-            int num_blocks = n / block_size + (n % block_size != 0);
+            int blocks = n / block_size + (n % block_size != 0);
 
-            for(i = 1; i<num_blocks; i++) {
+            for(i = 1; i<blocks; i++) {
                 if(D[0] > D[i]) {
                     D[0] = D[i];                   
                 }
@@ -165,9 +162,9 @@ int main(int argc, char* argv[]) {
     float * dmin_dist;		// minimum value on device
 
     // Device parameters
-    int MAX_BLOCK_SIZE;		// Maximum number of threads allowed on the device
+    //int MAX_BLOCK_SIZE;		// Maximum number of threads allowed on the device
     int blocks;			// Number of blocks in grid
-    int threads_per_block;	// Number of threads per block
+    //int threads_per_block;	// Number of threads per block
 
     // Timing variables
     cudaEvent_t start, stop;		// GPU timing variables
@@ -189,7 +186,7 @@ int main(int argc, char* argv[]) {
     if (deviceCount > 0) {
 	cudaSetDevice(0); 
 	cudaGetDeviceProperties(&deviceProp, 0);
-	MAX_BLOCK_SIZE = deviceProp.maxThreadsPerBlock;
+	//int MAX_BLOCK_SIZE = deviceProp.maxThreadsPerBlock;
     } else {
 	printf("Warning: No GPU device found ... results may be incorrect\n");
     }
@@ -243,9 +240,9 @@ int main(int argc, char* argv[]) {
     // Invoke kernel
     cudaEventRecord( start, 0 ); 
 
-    int num_blocks = num_points / (block_size) + ((num_points % (block_size)) != 0);
+    blocks = num_points / block_size + (num_points % block_size != 0);
 
-    minimum_distance<<<num_blocks, block_size>>>(dVx, dVy, dmin_dist, num_points);
+    minimum_distance_kernel<<<blocks, block_size>>>(dVx, dVy, dmin_dist, num_points);
 
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
